@@ -1,0 +1,149 @@
+from tabulate import tabulate
+import pandas as pd
+import networkx as nx
+import math 
+from networkx import DiGraph, from_numpy_matrix, relabel_nodes, set_node_attributes
+from numpy import array
+import numpy as np
+CTSdata = pd.read_excel(r'[DATEIPFAD]')#Dateipfad der  Distanzatrix von Kunde zu Lade-/Tankstation
+STCdata = pd.read_excel(r'[DATEIPFAD]') #Dateipfad der Distanzmatrix von Lade-/Tankstation zu Kunde
+cdata = pd.read_excel(r'[DATEIPFAD]') #Dateipfad der Distanzmatrix der Kunden
+DISTANCES = np.array(cdata)
+DISTANCES_CTS = np.array(CTSdata)
+DISTANCES_STC = np.array(STCdata)
+
+A = array(DISTANCES, dtype=[("cost", int)])
+G = from_numpy_matrix(A, create_using=nx.DiGraph())
+G = relabel_nodes(G, {0: "Source", 51: "Sink"}) # [WERT]: "Sink" -> Wert ist immer Anzahl Kunden + 1
+from vrpy import VehicleRoutingProblem
+prob = VehicleRoutingProblem(G)
+prob.solve(time_limit=60) #Legt ein Zeitlimit fest wie lange die Algorithmen angewendet werden sollen (in Sekunden)
+prob.best_value
+prob.best_routes
+
+TV_voll_D= 375 #maximales Tankvolumen Diesel
+VproKm_D= 0.375 #Verbrauch pro Kilometer Diesel
+TV_voll = 155 #maximales Tankvolumen/Batteriekapazität Alternative
+VproKm = 0.324 # Verbrauch pro Kilometer Alternative
+dgeschw = 70 # Durchschnittsgeschwindigkeit
+L_Kosten = 15 #Lohnkosten 
+T_Kosten_A = 1.07 #Treibstoffkosten Alternative
+T_Kosten_D = 1.368 #Treibstoffkosten Diesel 
+CO2_D = 0.621 # CO2-Ausstoß Diesel pro Kilometer
+CO2_A = 0.574 #CO2-Ausstoß Alternative pro Kilometer
+TK_Dauer_A = 0.25 #Tankdauer pro Tankstopp Alternative
+TK_Dauer_D = 0.25 #Tankdauer pro Tankstopp Diesel 
+route=[]
+route1=[]
+TV = TV_voll
+kmG = 0
+kmG1=0
+kmG2=0
+Tankstation_Anzahl = 0
+y = 0
+i = 1
+for i in range (1, len(prob.best_routes)+1):
+    arr1 = prob.best_routes[i]
+    arr1[arr1 == 'Source'] = 0
+    arr1[len(arr1)-1] = len(DISTANCES)-1
+    x=0
+    for y in range (0, len(arr1)-2):
+            value_arr1 = arr1[y]
+            arr2 = DISTANCES[x]
+            valueNC_arr1=arr1[y+1]
+            value_arr2=arr2[valueNC_arr1]
+            if  TV  - value_arr2*VproKm<TV_voll*0.2:
+                CTS_arr=DISTANCES_CTS[value_arr1]
+                DISTANCES_STC_T=np.transpose(DISTANCES_STC)
+                STC_arr_t=DISTANCES_STC_T[valueNC_arr1]
+                result=np.zeros(len(CTS_arr), dtype=float)
+                for m in range (0,len(CTS_arr)):
+                    result[m]= CTS_arr[m] + STC_arr_t[m];
+                min_CTS= np.amin(result)
+                index=result.tolist().index(min_CTS)
+                TV = TV_voll*0.8
+                km2C_arr=STC_arr_t[index]
+                print(value_arr1, '-> Tankstelle', index+1,[i],':', CTS_arr[index])
+                print('Tank(nach Auffüllung)',[i],':',TV_voll)
+                print ('Tankstelle',index+1, '->',valueNC_arr1,[i],':' ,km2C_arr)
+                kmG=kmG + min_CTS
+                Tankstation_Anzahl = Tankstation_Anzahl + 1 
+                TV = TV - km2C_arr*VproKm
+                print('Tank',[i],':', TV)
+                kmG1=kmG1+value_arr2
+                kmG2=kmG2+min_CTS
+                route += [value_arr1]
+                route1 +=[value_arr1]
+                route += [[index+1]]
+               
+                
+            else:
+                TV =TV - value_arr2*VproKm
+                print(value_arr1, '->', valueNC_arr1,[i],':',value_arr2,)
+                print('Tank',[i],':', TV)
+                kmG=kmG + value_arr2
+                kmG1=kmG1+value_arr2
+                route += [value_arr1]
+                route1 +=[value_arr1]
+            x = valueNC_arr1
+            y += 1;
+    
+    ToDepot=DISTANCES[valueNC_arr1]
+    value_ToDepot=ToDepot[len(ToDepot)-1]
+    if TV-value_ToDepot*VproKm < 0:
+        CTS_arr=DISTANCES_CTS[valueNC_arr1]
+        STC_arr_t=DISTANCES_STC_T[len(ToDepot)-2]
+        result=np.zeros(len(CTS_arr), dtype=float)
+        for m in range (0,len(CTS_arr)):
+            result[m]= CTS_arr[m] + STC_arr_t[m];
+        min_CTS= np.amin(result)
+        index=result.tolist().index(min_CTS)
+        TV = TV_voll*0.8
+        STC_arr_t=DISTANCES_STC[index]
+        km2C_arr=STC_arr_t[valueNC_arr1]
+        print(valueNC_arr1,'-> Tankstelle', index+1, [i],':',)
+        print('Tank(nach Auffüllung)',[i],':',TV_voll)
+        TV = TV - km2C_arr*VproKm
+        print('Tank',[i],':', TV)     
+        print ('Tankstelle',index+1, '->',len(ToDepot)-1,[i],':' ,km2C_arr)
+        Tankstation_Anzahl = Tankstation_Anzahl + 1
+        kmG=kmG+min_CTS
+        kmG1=kmG1+value_ToDDepot
+        kmG2=kmG2+min_CTS
+        route += [valueNC_arr1]
+        route += [len(ToDepot)-1]
+        route += [[index+1]]
+        route1 += [valueNC_arr1]
+        route1 += [len(ToDepot)-1]
+    else:
+        print(valueNC_arr1,'->',len(ToDepot)-1,'[1]:',value_ToDepot)
+        TV = TV-value_ToDepot*VproKm
+        print('Tank',[i],':', TV)
+        kmG=kmG + value_ToDepot
+        kmG1=kmG1+value_ToDepot
+        route += [valueNC_arr1]
+        route += [len(ToDepot)-1]
+        route1 += [valueNC_arr1]
+        route1 += [len(ToDepot)-1]
+
+        
+    print('Route mit Dieselfahrzeug',[i],':\n', route1) 
+    print('Route mit Alternative und Umwege für Tankstellen:',[i],':\n',route)
+    print('Kilometer mit Dieselfahrzeug',[i],':',round(kmG1,2))
+    print('Kilometer mit Alternative',[i],':',round(kmG,2))
+    print('Umweg',[i],':',round(kmG-kmG1,2))
+    print('Fahrzeit Dieselfahrzeug', [i], ':', round(round(kmG1,2)/dgeschw,2))
+    print('Fahrzeit Alternative', [i], ':', round(round(kmG,2)/dgeschw,2))
+    print('Tankstopps Dieselfahrzeug', [i],':', math.floor(round(kmG1,2)/((TV_voll_D/VproKm_D)*0.8)))
+    print('Tankstops Alternative',[i],':', Tankstation_Anzahl)
+    print('Gesamtzeit Dieselfahrzeug' ,[i],':', round(round(kmG1,2)/dgeschw+math.floor(round(kmG1,2)/((TV_voll_D/VproKm_D)*0.8))*TK_Dauer_D,2) )
+    print('Gesamtzeit Alternative', [i], ':', round(round(kmG,2)/dgeschw+Tankstation_Anzahl*TK_Dauer_A,2))
+    print('Lohnkosten Dieselfahrzeug', [i], ':',round((round(kmG1,2)/dgeschw+math.floor(round(kmG1,2)/((TV_voll_D/VproKm_D)*0.8))*TK_Dauer_D)*L_Kosten,2))
+    print('Lohnkosten Alternative', [i], ':', round((round(kmG,2)/dgeschw+Tankstation_Anzahl*TK_Dauer_A)*L_Kosten,2))
+    print('Treibstoffkosten Dieselfahrzeug', [i],':', round(kmG1*VproKm_D*T_Kosten_D,2))
+    print('Treibstoffkosten Alternative', [i], ':', round(kmG*VproKm*T_Kosten_A,2))
+    print('Gesamtkosten Dieselfahrzeug', [i], ':', round(round((round(kmG1,2)/dgeschw+math.floor(round(kmG1,2)/((TV_voll_D/VproKm_D)*0.8))*TK_Dauer_D)*L_Kosten,2)+round(kmG1*VproKm_D*T_Kosten_D,2),2))
+    print('Gesamtkosten Alternative', [i], ':', round(round((round(kmG,2)/dgeschw+Tankstation_Anzahl*TK_Dauer_A)*L_Kosten,2)+round(kmG*VproKm*T_Kosten_A,2),2))
+    print('CO2-Ausstoß' ,[i], ':', round(kmG1*CO2_D,2))
+    print('CO2-Ausstoß', [i], ':', round(kmG*CO2_A,2))
+    i += 1
